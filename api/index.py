@@ -1,7 +1,7 @@
-import gradio as gr
+from fastapi import FastAPI, Request
+import os
 from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
-import os
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -12,23 +12,21 @@ hf_token = os.getenv("HUGGINGFACE_TOKEN")
 # Initialize the InferenceClient with the model and token
 client = InferenceClient("microsoft/Phi-3-mini-4k-instruct", token=hf_token)
 
-# Response generation function
-def respond(
-    message,
-    history: list[tuple[str, str]],
-    system_message,
-    max_tokens,
-    temperature,
-    top_p,
-):
-    messages = [{"role": "system", "content": system_message}]
+# Create FastAPI app
+app = FastAPI()
 
+# Response generation function
+def respond(message, history: list[tuple[str, str]], system_message, max_tokens, temperature, top_p):
+    messages = [{"role": "system", "content": system_message}]
+    
+    # Add the conversation history to the message list
     for val in history:
         if val[0]:
             messages.append({"role": "user", "content": val[0]})
         if val[1]:
             messages.append({"role": "assistant", "content": val[1]})
 
+    # Add the new user message to the message list
     messages.append({"role": "user", "content": message})
 
     response = ""
@@ -47,17 +45,17 @@ def respond(
 
     return response  # Return the complete response directly
 
-# Gradio Interface
-demo = gr.ChatInterface(
-    respond,
-    additional_inputs=[
-        gr.Textbox(value="You are a friendly Chatbot.", label="System message"),
-        gr.Slider(minimum=1, maximum=2048, value=512, step=1, label="Max new tokens"),
-        gr.Slider(minimum=0.1, maximum=4.0, value=0.7, step=0.1, label="Temperature"),
-        gr.Slider(minimum=0.1, maximum=1.0, value=0.95, step=0.05, label="Top-p (nucleus sampling)"),
-    ],
-)
+# Endpoint to access the API via FastAPI
+@app.post("/generate-response/")
+async def generate_response(request: Request):
+    body = await request.json()
+    message = body["message"]
+    history = body.get("history", [])
+    system_message = body.get("system_message", "You are a friendly Chatbot.")
+    max_tokens = body.get("max_tokens", 512)
+    temperature = body.get("temperature", 0.7)
+    top_p = body.get("top_p", 0.95)
 
-# Launch Gradio interface
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
+    # Call respond function and return the response
+    response = respond(message, history, system_message, max_tokens, temperature, top_p)
+    return {"response": response}
